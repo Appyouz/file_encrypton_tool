@@ -29,3 +29,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 include_directories(/usr/include/cryptopp)
 
 target_link_libraries(${PROJECT_NAME} cryptopp)
+
+set(CMAKE_ERROR_DEPRECATED TRUE)
+set(CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION TRUE)
