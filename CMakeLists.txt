@@ -32,3 +32,8 @@ target_link_libraries(${PROJECT_NAME} cryptopp)
 
 set(CMAKE_ERROR_DEPRECATED TRUE)
 set(CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION TRUE)
+
+# Add flags for comprehensive warnings and error messages
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
+endif()
