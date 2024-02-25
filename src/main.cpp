@@ -8,21 +8,43 @@
 #include <iostream>
 #include <string>
 
-void encrypt(const std::string& inputFile, const std::string& cipherFile, const CryptoPP::SecByteBlock& key, const CryptoPP::SecByteBlock& iv);
+void encrypt(const std::string& inputFile, const std::string& outputFile);
 void decryptFile(const std::string& cipherFile, const std::string& outputFile);
 
 int main() {
-    std::string inputFile, outputFile, cipherFile;
+    std::string inputFile, outputFile;
     char choice;
 
     std::cout << "Enter input file path: ";
     std::cin >> inputFile;
 
-    std::cout << "Enter cipher file path: ";
-    std::cin >> cipherFile;
-
     std::cout << "Enter output file path: ";
     std::cin >> outputFile;
+
+    std::cout << "Choose an option:\n";
+    std::cout << "1. Encrypt\n";
+    std::cout << "2. Decrypt\n";
+    std::cout << "Enter your choice: ";
+    std::cin >> choice;
+
+    switch (choice) {
+        case '1':
+            encrypt(inputFile, outputFile);
+            break;
+        case '2':
+            decryptFile(inputFile, outputFile);
+            break;
+        default:
+            std::cout << "Invalid choice.\n";
+            break;
+    }
+
+    return 0;
+}
+
+void encrypt(const std::string& inputFile, const std::string& outputFile) {
+    const int TAG_SIZE = 12;
+    std::string plainText;
 
     CryptoPP::AutoSeededRandomPool prng;
     CryptoPP::SecByteBlock key(CryptoPP::AES::DEFAULT_KEYLENGTH);
@@ -37,31 +59,6 @@ int main() {
     std::cout << "Generated IV (Hex): ";
     CryptoPP::StringSource(iv, iv.size(), true, new CryptoPP::HexEncoder(new CryptoPP::FileSink(std::cout)));
     std::cout << std::endl;
-
-    std::cout << "Choose an option:\n";
-    std::cout << "1. Encrypt\n";
-    std::cout << "2. Decrypt\n";
-    std::cout << "Enter your choice: ";
-    std::cin >> choice;
-
-    switch (choice) {
-        case '1':
-            encrypt(inputFile, cipherFile, key, iv);
-            break;
-        case '2':
-            decryptFile(cipherFile, outputFile);
-            break;
-        default:
-            std::cout << "Invalid choice.\n";
-            break;
-    }
-
-    return 0;
-}
-
-void encrypt(const std::string& inputFile, const std::string& cipherFile, const CryptoPP::SecByteBlock& key, const CryptoPP::SecByteBlock& iv) {
-    const int TAG_SIZE = 12;
-    std::string plainText;
 
     try {
         // Read plaintext from file
@@ -78,30 +75,31 @@ void encrypt(const std::string& inputFile, const std::string& cipherFile, const 
                                        e, new CryptoPP::StringSink(cipher), false, TAG_SIZE));
 
         // Write encrypted data to cipher file
-        CryptoPP::FileSink fileSink(cipherFile.c_str());
+        CryptoPP::FileSink fileSink(outputFile.c_str());
         fileSink.Put(reinterpret_cast<const CryptoPP::byte *>(cipher.data()), cipher.size());
 
         std::cout << "Encryption successful." << std::endl;
+
+        // Write key and IV to file
+        try {
+            std::ofstream keyIvFile("key_iv.txt");
+            if (keyIvFile.is_open()) {
+                keyIvFile << CryptoPP::HexEncoder(new CryptoPP::FileSink(keyIvFile)).Put(key, key.size());
+                keyIvFile << std::endl;
+                keyIvFile << CryptoPP::HexEncoder(new CryptoPP::FileSink(keyIvFile)).Put(iv, iv.size());
+                keyIvFile.close();
+                std::cout << "Key and IV written to key_iv.txt." << std::endl;
+            } else {
+                std::cerr << "Unable to open key_iv.txt for writing." << std::endl;
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "Error writing key and IV to file: " << ex.what() << std::endl;
+        }
     } catch (const CryptoPP::Exception &e) {
         std::cerr << "Encryption error: " << e.what() << std::endl;
     }
-
-    // Write key and IV to file
-    try {
-        std::ofstream keyIvFile("key_iv.txt");
-        if (keyIvFile.is_open()) {
-            keyIvFile << CryptoPP::HexEncoder(new CryptoPP::FileSink(keyIvFile)).Put(key, key.size());
-            keyIvFile << std::endl;
-            keyIvFile << CryptoPP::HexEncoder(new CryptoPP::FileSink(keyIvFile)).Put(iv, iv.size());
-            keyIvFile.close();
-            std::cout << "Key and IV written to key_iv.txt." << std::endl;
-        } else {
-            std::cerr << "Unable to open key_iv.txt for writing." << std::endl;
-        }
-    } catch (const std::exception& ex) {
-        std::cerr << "Error writing key and IV to file: " << ex.what() << std::endl;
-    }
 }
+
 void decryptFile(const std::string& cipherFile, const std::string& outputFile) {
     std::ifstream keyIvFile("key_iv.txt");
     std::string keyHex, ivHex;
