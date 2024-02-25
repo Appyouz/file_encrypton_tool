@@ -1,4 +1,3 @@
-
 #include "gcm.h"
 #include <cassert>
 #include <cryptopp/cryptlib.h>
