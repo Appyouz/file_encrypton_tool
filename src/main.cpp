@@ -1,188 +1,112 @@
-#include <iostream>
-using std::cout;
-using std::cerr;
-
-#include <string>
-using std::string;
-
-#include "hex.h"
-using CryptoPP::HexEncoder;
-using CryptoPP::HexDecoder;
-
-#include "osrng.h"
-using CryptoPP::AutoSeededRandomPool;
-
-#include "cryptlib.h"
-using CryptoPP::BufferedTransformation;
-using CryptoPP::AuthenticatedSymmetricCipher;
-
-#include "filters.h"
-using CryptoPP::Redirector;
-using CryptoPP::StringSink;
-using CryptoPP::StringSource;
-using CryptoPP::AuthenticatedEncryptionFilter;
-using CryptoPP::AuthenticatedDecryptionFilter;
-
-#include "aes.h"
-using CryptoPP::AES;
-
 #include "gcm.h"
-using CryptoPP::GCM;
-
+#include <cryptopp/cryptlib.h>
+#include <cryptopp/hex.h>
+#include <cryptopp/osrng.h>
 #include <cassert>
+#include <iostream>
+int main(int argc, char *argv[]) {
+  CryptoPP::AutoSeededRandomPool prng;
 
-using namespace std;
-int main(int argc, char* argv[])
-{
-    // The test vectors use both ADATA and PDATA. However,
-    //  as a drop in replacement for older modes such as
-    //  CBC, we only exercise (and need) plain text.
+  // Key
+  CryptoPP::byte key[CryptoPP::AES::DEFAULT_KEYLENGTH];
+  prng.GenerateBlock(key, sizeof(key));
 
-    AutoSeededRandomPool prng;
+  // iv vector
+  CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE];
+  prng.GenerateBlock(iv, sizeof(iv));
 
-    CryptoPP::byte key[ AES::DEFAULT_KEYLENGTH ];
-    prng.GenerateBlock( key, sizeof(key) );
+  const int TAG_SIZE{12};
 
-  CryptoPP::byte iv[ AES::BLOCKSIZE ];
-    prng.GenerateBlock( iv, sizeof(iv) );    
+  // plain text
+  std::string pdata{"MY PLAIN TEXT"};
 
-    const int TAG_SIZE = 12;
+  // Encrypted cipher with tage
+  std::string cipher;
+  // binary to hex
+  std::string encoded;
 
-    // Plain text
-    string pdata="Authenticated Encryption";
+  // recovered plain text
+  std::string rpdata;
+  // Pretty print
+  encoded.clear();
+  CryptoPP::StringSource keyPrint(
+      key, sizeof(key), true,
+      new CryptoPP::HexEncoder(new CryptoPP::StringSink(encoded)) // HexEncoder
+  ); // StringSource
+  std::cout << "key: " << encoded << '\n';
 
-    // Encrypted, with Tag
-    string cipher, encoded;
+  // Pretty print
+  encoded.clear();
+  CryptoPP::StringSource ivPrint(
+      iv, sizeof(iv), true,
+      new CryptoPP::HexEncoder(new CryptoPP::StringSink(encoded)) // HexEncoder
+  ); // StringSource
+  std::cout << " iv: " << encoded << '\n';
 
-    // Recovered plain text
-    string rpdata;
+  std::cout << '\n';
 
-    /*********************************\
-    \*********************************/
+  // Encryption process
+  try {
+    std::cout << "Plain Text: " << pdata << '\n';
+    CryptoPP::GCM<CryptoPP::AES>::Encryption e;
+    e.SetKeyWithIV(key, sizeof(key), iv, sizeof(iv));
 
-    // Pretty print
-    encoded.clear();
-    StringSource( key, sizeof(key), true,
-        new HexEncoder(
-            new StringSink( encoded )
-        ) // HexEncoder
-    ); // StringSource
-    cout << "key: " << encoded << endl;
+    CryptoPP::StringSource(pdata, true,
+                           new CryptoPP::AuthenticatedEncryptionFilter(
+                               e, new CryptoPP::StringSink(cipher), false,
+                               TAG_SIZE) // AuthenticatedEncryptionFilter
+    );                                   // StringSource
+  } catch (CryptoPP::InvalidArgument &e) {
 
-    // Pretty print
-    encoded.clear();
-    StringSource( iv, sizeof(iv), true,
-        new HexEncoder(
-            new StringSink( encoded )
-        ) // HexEncoder
-    ); // StringSource
-    cout << " iv: " << encoded << endl;
+    std::cerr << "Caught InvalidArgument..." << std::endl;
+    std::cerr << e.what() << std::endl;
+    std::cerr << std::endl;
+  } catch (CryptoPP::Exception &e) {
 
-    cout << endl;
+    std::cerr << "Caught Exception..." << std::endl;
+    std::cerr << e.what() << std::endl;
+    std::cerr << std::endl;
+  }
+  // TIll this section It prints the Plain text and Encrypts it.
 
-    /*********************************\
-    \*********************************/
+  // Now we print cipher text
+  // Pretty print
+  encoded.clear();
+  CryptoPP::StringSource(
+      cipher, true,
+      new CryptoPP::HexEncoder(new CryptoPP::StringSink(encoded)) // HexEncoder
+  ); // StringSource
+  std::cout << "cipher text: " << encoded << std::endl;
 
-    try
-    {
-        cout << "plain text: " << pdata << endl;
+  try {
+    CryptoPP::GCM<CryptoPP::AES>::Decryption decryption;
+    decryption.SetKeyWithIV(key, sizeof(key), iv, sizeof(iv));
 
-        GCM< AES >::Encryption e;
-        e.SetKeyWithIV( key, sizeof(key), iv, sizeof(iv) );
-        // e.SpecifyDataLengths( 0, pdata.size(), 0 );
+    CryptoPP::AuthenticatedDecryptionFilter df(
+        decryption, new CryptoPP::StringSink(rpdata),
+        CryptoPP::AuthenticatedDecryptionFilter::DEFAULT_FLAGS,
+        TAG_SIZE); // AuthenticatedDecryptionFilter
 
-        StringSource( pdata, true,
-            new AuthenticatedEncryptionFilter( e,
-                new StringSink( cipher ), false, TAG_SIZE
-            ) // AuthenticatedEncryptionFilter
-        ); // StringSource
-    }
-    catch( CryptoPP::InvalidArgument& e )
-    {
-        cerr << "Caught InvalidArgument..." << endl;
-        cerr << e.what() << endl;
-        cerr << endl;
-    }
-    catch( CryptoPP::Exception& e )
-    {
-        cerr << "Caught Exception..." << endl;
-        cerr << e.what() << endl;
-        cerr << endl;
-    }
+    CryptoPP::StringSource(
+        cipher, true,
+        new CryptoPP::Redirector(df /*, PASS_EVERYTHING */)); // StringSource
 
-    /*********************************\
-    \*********************************/
+    bool b = df.GetLastResult();
+    assert(true == b);
 
-    // Pretty print
-    encoded.clear();
-    StringSource( cipher, true,
-        new HexEncoder(
-            new StringSink( encoded )
-        ) // HexEncoder
-    ); // StringSource
-    cout << "cipher text: " << encoded << endl;
-
-    // Attack the first and last byte
-    //if( cipher.size() > 1 )
-    //{
-    // cipher[ 0 ] |= 0x0F;
-    // cipher[ cipher.size()-1 ] |= 0x0F;
-    //}
-
-    /*********************************\
-    \*********************************/
-
-    try
-    {
-        GCM< AES >::Decryption d;
-        d.SetKeyWithIV( key, sizeof(key), iv, sizeof(iv) );
-        // d.SpecifyDataLengths( 0, cipher.size()-TAG_SIZE, 0 );
-
-        AuthenticatedDecryptionFilter df( d,
-            new StringSink( rpdata ),
-            AuthenticatedDecryptionFilter::DEFAULT_FLAGS,
-            TAG_SIZE
-        ); // AuthenticatedDecryptionFilter
-
-        // The StringSource dtor will be called immediately
-        //  after construction below. This will cause the
-        //  destruction of objects it owns. To stop the
-        //  behavior so we can get the decoding result from
-        //  the DecryptionFilter, we must use a redirector
-        //  or manually Put(...) into the filter without
-        //  using a StringSource.
-        StringSource( cipher, true,
-            new Redirector( df /*, PASS_EVERYTHING */ )
-        ); // StringSource
-
-        // If the object does not throw, here's the only
-        //  opportunity to check the data's integrity
-        bool b = df.GetLastResult();
-        assert( true == b );
-
-        cout << "recovered text: " << rpdata << endl;
-    }
-    catch( CryptoPP::HashVerificationFilter::HashVerificationFailed& e )
-    {
-        cerr << "Caught HashVerificationFailed..." << endl;
-        cerr << e.what() << endl;
-        cerr << endl;
-    }
-    catch( CryptoPP::InvalidArgument& e )
-    {
-        cerr << "Caught InvalidArgument..." << endl;
-        cerr << e.what() << endl;
-        cerr << endl;
-    }
-    catch( CryptoPP::Exception& e )
-    {
-        cerr << "Caught Exception..." << endl;
-        cerr << e.what() << endl;
-        cerr << endl;
-    }
-
-    /*********************************\
-    \*********************************/
-
-    return 0;
+    std::cout << "recovered text: " << rpdata << std::endl;
+  } catch (CryptoPP::HashVerificationFilter::HashVerificationFailed &e) {
+    std::cerr << "Caught HashVerificationFailed..." << std::endl;
+    std::cerr << e.what() << std::endl;
+    std::cerr << std::endl;
+  } catch (CryptoPP::InvalidArgument &e) {
+    std::cerr << "Caught InvalidArgument..." << std::endl;
+    std::cerr << e.what() << std::endl;
+    std::cerr << std::endl;
+  } catch (CryptoPP::Exception &e) {
+    std::cerr << "Caught Exception..." << std::endl;
+    std::cerr << e.what() << std::endl;
+    std::cerr << std::endl;
+  }
+return 0;
 }
